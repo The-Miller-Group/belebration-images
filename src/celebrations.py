@@ -4,6 +4,7 @@ import random
 import sys
 import urllib.parse
 import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -58,8 +59,14 @@ def get_graph_token():
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    with urllib.request.urlopen(request) as response:
-        return json.loads(response.read().decode("utf-8"))["access_token"]
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read().decode("utf-8"))["access_token"]
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"Entra token exchange failed with HTTP {exc.code}: {details}"
+        ) from exc
 
 
 def graph_get(token, path):
