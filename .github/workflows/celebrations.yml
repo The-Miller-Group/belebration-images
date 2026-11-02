@@ -12,7 +12,7 @@ on:
         default: true
         type: boolean
   schedule:
-    - cron: '0 14,15 * * *'
+    - cron: '0 14,15,16,17 * * *'
 
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
           SHAREPOINT_HOST: ${{ vars.SHAREPOINT_HOST }}
           SHAREPOINT_SITE_PATH: ${{ vars.SHAREPOINT_SITE_PATH }}
           EMPLOYEE_LIST_NAME: ${{ vars.EMPLOYEE_LIST_NAME }}
+          CELEBRATION_LOG_LIST_ID: ${{ vars.CELEBRATION_LOG_LIST_ID }}
           MAIL_SENDER: ${{ vars.MAIL_SENDER }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           TIME_ZONE: ${{ vars.TIME_ZONE }}

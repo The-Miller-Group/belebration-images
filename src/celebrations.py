@@ -167,6 +167,134 @@ def post_teams(subject, message, url):
     )
 
 
+def get_sent_event_keys(token, site_id):
+    list_id = os.environ["CELEBRATION_LOG_LIST_ID"]
+    url = (
+        f"{GRAPH}/sites/{site_id}/lists/{list_id}/items"
+        "?$expand=fields($select=EventKey)&$top=999"
+    )
+    items = get_all_items(token, url)
+    return {
+        item.get("fields", {}).get("EventKey")
+        for item in items
+        if item.get("fields", {}).get("EventKey")
+    }
+
+
+def record_sent_event(token, site_id, event, event_key, teams_sent, email_sent):
+    list_id = os.environ["CELEBRATION_LOG_LIST_ID"]
+    body = {
+        "fields": {
+            "Title": event["name"],
+            "EventKey": event_key,
+            "EmployeeEmail": event.get("email") or "",
+            "EventType": (
+                "Birthday"
+                if event["type"] == "birthday"
+                else "Anniversary"
+            ),
+            "EventDate": event["event_date"],
+            "AnniversaryYears": event.get("years"),
+            "TeamsSent": teams_sent,
+            "EmailSent": email_sent,
+            "ImageUrl": event["image"],
+        }
+    }
+
+    request_json(
+        f"{GRAPH}/sites/{site_id}/lists/{list_id}/items",
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        body=body,
+    )
+
+def send_anniversary_email(token, event):
+    sender = os.environ["MAIL_SENDER"]
+    recipient = event.get("email")
+
+    if not recipient:
+        raise RuntimeError(
+            f"No employee email address is available for {event['name']}"
+        )
+
+    years = event["years"]
+    first_name = event["name"].split()[0]
+
+    subjects = {
+        1: "Congratulations on Your One-Year Work Anniversary!",
+        5: "Congratulations on Your Five-Year Work Anniversary!",
+        10: "Congratulations on Your Ten-Year Work Anniversary!",
+        15: "Celebrating Your 15 Year Work Anniversary!",
+        20: "Celebrating Your Remarkable 20-Year Journey with Our Company",
+    }
+
+    messages = {
+        1: (
+            f"{first_name},<br><br>"
+            "Happy 1st anniversary! It's been an incredible year with you "
+            "as part of our team. Thank you for your hard work and dedication. "
+            "Looking forward to many more milestones together!"
+        ),
+        5: (
+            f"{first_name},<br><br>"
+            "Today marks your fifth anniversary with Modern Business Interiors, "
+            "and I wanted to express our appreciation for your hard work and "
+            "dedication. Thank you for your continued commitment to excellence."
+        ),
+        10: (
+            f"{first_name},<br><br>"
+            "Happy 10th Anniversary! Your dedication, creativity, and hard work "
+            "over the past decade have made a meaningful impact on our company. "
+            "Thank you for being an integral part of our success."
+        ),
+        15: (
+            f"{first_name},<br><br>"
+            "Happy 15th Anniversary! Thank you for your outstanding dedication "
+            "and contributions to Modern Business Interiors. Your commitment, "
+            "expertise, and leadership have played an important role in our success."
+        ),
+        20: (
+            f"{first_name},<br><br>"
+            "Happy 20th Anniversary! Today we celebrate two decades of your "
+            "incredible dedication and contributions to Modern Business Interiors. "
+            "Thank you for your continued commitment and loyalty."
+        ),
+    }
+
+    body = {
+        "message": {
+            "subject": subjects[years],
+            "body": {
+                "contentType": "HTML",
+                "content": (
+                    f"<p>{messages[years]}<br><br>"
+                    "Best regards,<br><br>Jordan</p>"
+                ),
+            },
+            "toRecipients": [
+                {"emailAddress": {"address": recipient}}
+            ],
+            "bccRecipients": [
+                {"emailAddress": {"address": sender}}
+            ],
+        },
+        "saveToSentItems": True,
+    }
+
+    encoded_sender = urllib.parse.quote(sender)
+    request_json(
+        f"{GRAPH}/users/{encoded_sender}/sendMail",
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        body=body,
+    )
+
 def anniversary_folder(years):
     milestones = {1, 5, 10, 15, 20, 25}
     return f"{years}-year" if years == 1 else (
@@ -178,9 +306,20 @@ def main():
     dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
     now = datetime.now(ZoneInfo(os.getenv("TIME_ZONE", "America/Chicago")))
 
-    if os.getenv("GITHUB_EVENT_NAME") == "schedule" and now.hour != 9:
-        print(f"Skipping scheduled run because local time is {now:%I:%M %p %Z}, not 9:00 AM.")
-        return
+    github_event = os.getenv("GITHUB_EVENT_NAME")
+    phase = "all"
+
+    if github_event == "schedule":
+        if now.hour == 9:
+            phase = "teams"
+        elif now.hour == 11:
+            phase = "email"
+        else:
+            print(
+                f"Skipping scheduled run because local time is "
+                f"{now:%I:%M %p %Z}, not 9:00 AM or 11:00 AM."
+            )
+            return
 
     token = get_graph_token()
 
@@ -212,6 +351,7 @@ def main():
     items = get_all_items(token, url)
 
     events = []
+    event_date = now.date().isoformat()
 
     for item in items:
         fields = item.get("fields", {})
@@ -221,6 +361,7 @@ def main():
         first = fields.get("PreferredFirstName") or fields.get("Title") or ""
         last = fields.get("field_1") or ""
         name = f"{first} {last}".strip()
+        email = fields.get("Email_x0020_Address") or ""
 
         birthday = parse_date(fields.get("field_2"))
         hire_date = parse_date(fields.get("field_3"))
@@ -230,8 +371,13 @@ def main():
                 {
                     "type": "birthday",
                     "name": name,
+                    "email": email,
+                    "event_date": event_date,
                     "subject": f"Happy Birthday, {name}!",
-                    "message": "Please take some time today to wish them a happy birthday!",
+                    "message": (
+                        "Please take some time today to wish them "
+                        "a happy birthday!"
+                    ),
                     "image": choose_image(Path("birthday")),
                 }
             )
@@ -245,29 +391,82 @@ def main():
                         "type": "anniversary",
                         "name": name,
                         "years": years,
-                        "email": fields.get("Email_x0020_Address"),
+                        "email": email,
+                        "send_email": years in {1, 5, 10, 15, 20},
+                        "event_date": event_date,
                         "subject": f"Congratulations {name}, on {years} Years!",
-                        "message": "Thank you for your exceptional dedication and contributions!",
+                        "message": (
+                            "Thank you for your exceptional dedication "
+                            "and contributions!"
+                        ),
                         "image": choose_image(Path("anniversary") / folder),
                     }
                 )
 
+    sent_keys = get_sent_event_keys(token, site["id"])
+
     print(f"Site: {site['displayName']}")
-    print(f"Active employee records read: {sum(active(i.get('fields', {}).get('ActiveEmployee')) for i in items)}")
+    print(
+        "Active employee records read: "
+        f"{sum(active(i.get('fields', {}).get('ActiveEmployee')) for i in items)}"
+    )
     print(f"Celebrations found: {len(events)}")
+    print(f"Phase: {phase}")
     print(f"Dry run: {dry_run}")
 
     for event in events:
+        identity = event.get("email") or event["name"].lower()
+        base_key = (
+            f"{event['event_date']}|{event['type']}|{identity}"
+        ).lower()
+        teams_key = f"{base_key}|teams"
+        email_key = f"{base_key}|email"
+
         print(
             f"{event['type']}: {event['name']} | "
             f"{event['image']}"
         )
-        if not dry_run:
-            post_teams(
-                event["subject"],
-                event["message"],
-                event["image"],
-            )
+
+        if phase in {"all", "teams"}:
+            if teams_key in sent_keys:
+                print(f"Teams already sent: {event['name']}")
+            elif not dry_run:
+                post_teams(
+                    event["subject"],
+                    event["message"],
+                    event["image"],
+                )
+                record_sent_event(
+                    token,
+                    site["id"],
+                    event,
+                    teams_key,
+                    True,
+                    False,
+                )
+                sent_keys.add(teams_key)
+                print(f"Teams sent: {event['name']}")
+
+        should_email = (
+            event["type"] == "anniversary"
+            and event.get("send_email", False)
+        )
+
+        if phase in {"all", "email"} and should_email:
+            if email_key in sent_keys:
+                print(f"Email already sent: {event['name']}")
+            elif not dry_run:
+                send_anniversary_email(token, event)
+                record_sent_event(
+                    token,
+                    site["id"],
+                    event,
+                    email_key,
+                    False,
+                    True,
+                )
+                sent_keys.add(email_key)
+                print(f"Jordan email sent: {event['name']}")
 
     if not events:
         print("No birthday or anniversary events found for today.")
