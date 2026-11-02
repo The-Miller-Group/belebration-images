@@ -1,0 +1,44 @@
+name: MBI Celebrations
+
+on:
+  push:
+    branches:
+      - joe/celebration-automation
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Do not send Teams posts or emails
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    - cron: '0 14,15,16,17 * * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  celebrations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run celebration automation
+        env:
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          SHAREPOINT_HOST: ${{ vars.SHAREPOINT_HOST }}
+          SHAREPOINT_SITE_PATH: ${{ vars.SHAREPOINT_SITE_PATH }}
+          EMPLOYEE_LIST_NAME: ${{ vars.EMPLOYEE_LIST_NAME }}
+          CELEBRATION_LOG_LIST_ID: ${{ vars.CELEBRATION_LOG_LIST_ID }}
+          MAIL_SENDER: ${{ vars.MAIL_SENDER }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          TIME_ZONE: ${{ vars.TIME_ZONE }}
+          DRY_RUN: ${{ github.event_name == 'push' && 'true' || github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: python src/celebrations.py
