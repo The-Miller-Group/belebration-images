@@ -1,9 +1,6 @@
 name: MBI Celebrations
 
 on:
-  push:
-    branches:
-      - joe/celebration-automation
   workflow_dispatch:
     inputs:
       dry_run:
@@ -12,7 +9,11 @@ on:
         default: true
         type: boolean
   schedule:
-    - cron: '0 14,15,16,17 * * *'
+    - cron: '*/15 14-18 * * *'
+
+concurrency:
+  group: mbi-celebrations
+  cancel-in-progress: false
 
 permissions:
   contents: read
