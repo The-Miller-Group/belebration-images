@@ -352,6 +352,60 @@ def main():
     )
     items = get_all_items(token, url)
 
+
+    if os.getenv("PREVIEW_UPCOMING", "false").lower() == "true":
+        from datetime import date, timedelta
+
+        today = now.date()
+        upcoming = []
+
+        for item in items:
+            fields = item.get("fields", {})
+            if not active(fields.get("ActiveEmployee")):
+                continue
+
+            first = fields.get("PreferredFirstName") or fields.get("Title") or ""
+            last = fields.get("field_1") or ""
+            name = f"{first} {last}".strip()
+
+            for kind, field in (
+                ("Birthday", "field_2"),
+                ("Anniversary", "field_3"),
+            ):
+                original = parse_date(fields.get(field))
+                if not original:
+                    continue
+
+                for year in (today.year, today.year + 1, today.year + 2):
+                    try:
+                        occurrence = date(year, original.month, original.day)
+                    except ValueError:
+                        continue
+
+                    if occurrence < today:
+                        continue
+
+                    if kind == "Anniversary" and year <= original.year:
+                        continue
+
+                    years = year - original.year
+                    upcoming.append((occurrence, name, kind, years))
+                    break
+
+        upcoming.sort(key=lambda x: (x[0], x[1], x[2]))
+
+        print(f"Active employees: {sum(active(i.get('fields', {}).get('ActiveEmployee')) for i in items)}")
+        print("Upcoming celebrations:")
+
+        for day, name, kind, years in upcoming[:10]:
+            detail = f" ({years} years)" if kind == "Anniversary" else ""
+            print(f"{day.isoformat()} | {kind} | {name}{detail}")
+
+        if not upcoming:
+            print("No upcoming celebrations found.")
+
+        return
+
     events = []
     event_date = now.date().isoformat()
 
