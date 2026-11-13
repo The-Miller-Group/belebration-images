@@ -3,6 +3,11 @@ name: MBI Celebrations
 on:
   workflow_dispatch:
     inputs:
+      preview_upcoming:
+        description: Preview upcoming celebrations without sending
+        required: false
+        default: false
+        type: boolean
       dry_run:
         description: Do not send Teams posts or emails
         required: true
@@ -41,5 +46,6 @@ jobs:
           MAIL_SENDER: ${{ vars.MAIL_SENDER }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           TIME_ZONE: ${{ vars.TIME_ZONE }}
+          PREVIEW_UPCOMING: ${{ inputs.preview_upcoming || 'false' }}
           DRY_RUN: ${{ github.event_name == 'push' && 'true' || github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: python src/celebrations.py
