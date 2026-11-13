@@ -122,6 +122,11 @@ def choose_image(folder):
 
 
 def post_teams(subject, message, url):
+    now = datetime.now(ZoneInfo("America/Chicago"))
+    if not 9 <= now.hour < 11:
+        raise RuntimeError(
+            f"Teams posting blocked outside 9-11 AM Central: {now:%I:%M %p %Z}"
+        )
     payload = {
         "type": "message",
         "attachments": [
@@ -310,15 +315,12 @@ def main():
     phase = "all"
 
     if github_event == "schedule":
-        if now.hour == 9:
+        if 9 <= now.hour < 11:
             phase = "teams"
-        elif now.hour == 11:
+        elif now.hour >= 11:
             phase = "email"
         else:
-            print(
-                f"Skipping scheduled run because local time is "
-                f"{now:%I:%M %p %Z}, not 9:00 AM or 11:00 AM."
-            )
+            print(f"Before celebration window: {now:%I:%M %p %Z}")
             return
 
     token = get_graph_token()
@@ -427,7 +429,7 @@ def main():
             f"{event['image']}"
         )
 
-        if phase in {"all", "teams"}:
+        if phase in {"all", "teams"} and 9 <= datetime.now(ZoneInfo("America/Chicago")).hour < 11:
             if teams_key in sent_keys:
                 print(f"Teams already sent: {event['name']}")
             elif not dry_run:
